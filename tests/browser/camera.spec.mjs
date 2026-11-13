@@ -21,7 +21,7 @@ async function mockCamera(page, options = {}) {
     const harness = window.cameraHarness = {
       requests: [], tracks: [], shareCalls: [], photoRequests: [], failPermission: !!options.denied,
       failPhoto: !!options.failPhoto, shareMode: options.shareMode || 'cancel',
-      settings: [],
+      settings: [], constraintRequests: [], capabilityQueries: [], enumerations: 0,
     };
     function paint(canvas) {
       const ctx = canvas.getContext('2d');
@@ -29,21 +29,23 @@ async function mockCamera(page, options = {}) {
       ctx.fillStyle = '#318357'; ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = '#f02b31'; ctx.fillRect(0, 0, w / 8, h);
       ctx.fillStyle = '#244fe4'; ctx.fillRect(w * 7 / 8, 0, w / 8, h);
-      ctx.fillStyle = '#f5d146'; ctx.fillRect(w / 2 - h / 10, h / 2 - h / 10, h / 5, h / 5);
+      ctx.fillStyle = harness.centerColor || '#f5d146'; ctx.fillRect(w / 2 - h / 10, h / 2 - h / 10, h / 5, h / 5);
     }
     const devices = new EventTarget();
-    devices.enumerateDevices = async () => [
+    devices.enumerateDevices = async () => { harness.enumerations += 1; return [
       { kind: 'videoinput', deviceId: 'back', label: 'Back camera' },
       { kind: 'videoinput', deviceId: 'front', label: 'Front camera' },
       { kind: 'videoinput', deviceId: 'wide', label: 'Ultra Wide camera' },
-    ];
+    ]; };
     devices.getUserMedia = async (constraints) => {
       harness.requests.push(constraints);
       if (harness.failPermission) throw new DOMException('Denied', 'NotAllowedError');
       if (options.permissionDelay) await new Promise((resolve) => setTimeout(resolve, options.permissionDelay));
       const canvas = document.createElement('canvas');
-      canvas.width = 640; canvas.height = 480;
+      const upgraded = options.upgradeResolution && constraints.video.width?.ideal === 1280;
+      canvas.width = upgraded ? 1280 : 640; canvas.height = upgraded ? 960 : 480;
       paint(canvas);
+      harness.repaint = () => paint(canvas);
       let stream;
       let timer;
       if (canvas.captureStream) {
@@ -60,8 +62,8 @@ async function mockCamera(page, options = {}) {
         if (!harness.frame) {
           Object.defineProperty(video, 'srcObject', { configurable: true, writable: true, value: null });
           Object.defineProperty(video, 'readyState', { configurable: true, get: () => 4 });
-          Object.defineProperty(video, 'videoWidth', { configurable: true, get: () => 640 });
-          Object.defineProperty(video, 'videoHeight', { configurable: true, get: () => 480 });
+          Object.defineProperty(video, 'videoWidth', { configurable: true, get: () => harness.frame.width });
+          Object.defineProperty(video, 'videoHeight', { configurable: true, get: () => harness.frame.height });
           video.play = () => Promise.resolve();
           const draw = CanvasRenderingContext2D.prototype.drawImage;
           CanvasRenderingContext2D.prototype.drawImage = function (source, ...args) {
@@ -74,13 +76,19 @@ async function mockCamera(page, options = {}) {
       const stop = track.stop.bind(track);
       track.stop = () => { clearInterval(timer); stop(); };
       const deviceId = constraints.video.deviceId?.exact || (constraints.video.facingMode?.ideal === 'user' ? 'front' : 'back');
-      const settings = { width: 640, height: 480, facingMode: deviceId === 'front' ? 'user' : 'environment', deviceId, zoom: 1 };
+      const settings = { width: canvas.width, height: canvas.height, facingMode: deviceId === 'front' ? 'user' : 'environment', deviceId, zoom: 1 };
       let applied = constraints.video;
       track.getSettings = () => ({ ...settings });
-      track.getCapabilities = () => ({ width: { max: 640 }, height: { max: 480 }, ...(options.hardwareZoom ? { zoom: { min: 1, max: 8, step: 0.1 } } : {}) });
+      track.getCapabilities = () => ({ width: { max: options.upgradeResolution ? 1280 : 640 }, height: { max: options.upgradeResolution ? 960 : 480 }, ...(options.hardwareZoom ? { zoom: { min: 1, max: 8, step: 0.1 } } : {}) });
       track.getConstraints = () => ({ ...applied });
       track.applyConstraints = async (value) => {
+        harness.constraintRequests.push(value);
+        if (options.constraintDelay) await new Promise(resolve => setTimeout(resolve, options.constraintDelay));
         applied = value;
+        if (options.upgradeResolution && value.width?.ideal === 1280) {
+          canvas.width = settings.width = 1280; canvas.height = settings.height = 960;
+          paint(canvas);
+        }
         if (value.advanced?.[0]?.zoom) {
           if (options.zoomFailure) throw new DOMException('Zoom rejected', 'OverconstrainedError');
           settings.zoom = value.advanced[0].zoom;
@@ -92,15 +100,28 @@ async function mockCamera(page, options = {}) {
     };
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: devices });
     window.ImageCapture = class {
-      getPhotoCapabilities() { return Promise.resolve({ imageWidth: { max: 1600 }, imageHeight: { max: 1200 } }); }
+      constructor(track) { this.track = track; }
+      async getPhotoCapabilities() {
+        harness.capabilityQueries.push(this.track.getSettings().deviceId);
+        if (options.capabilityDelay) await new Promise(resolve => setTimeout(resolve, options.capabilityDelay));
+        return { imageWidth: { max: 1600 }, imageHeight: { max: 1200 } };
+      }
       async takePhoto(settings) {
         harness.photoRequests.push(settings);
+        if (options.photoDelay) await new Promise(resolve => setTimeout(resolve, options.photoDelay));
         if (harness.failPhoto) throw new Error('Still photo unavailable');
         const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 1200;
         paint(canvas);
         return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 1));
       }
     };
+    if (options.noImageCapture) window.ImageCapture = undefined;
+    if (options.encodingDelay) {
+      const toBlob = HTMLCanvasElement.prototype.toBlob;
+      HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+        setTimeout(() => toBlob.call(this, callback, ...args), options.encodingDelay);
+      };
+    }
     Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => !options.noShare });
     Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ files }) => {
       harness.shareCalls.push(files.map((file) => ({ name: file.name, type: file.type, size: file.size })));
@@ -132,7 +153,7 @@ test('square framing, high-resolution capture, clean export, cancelled share, an
   await expect(page.locator('#guide')).toBeHidden();
   expect(await page.evaluate(() => cameraHarness.photoRequests[0])).toEqual({ imageWidth: 1600, imageHeight: 1200 });
   expect(await page.evaluate(() => cameraHarness.requests[0].audio)).toBe(false);
-  expect(await page.evaluate(() => cameraHarness.tracks.every((track) => track.readyState === 'ended'))).toBe(true);
+  expect(await page.evaluate(() => cameraHarness.tracks.filter(track => track.readyState === 'live').length)).toBe(1);
   // The yellow centre must remain in the file, even though the live guide shaded it.
   const pixel = await page.evaluate(() => {
     const image = document.getElementById('photo');
@@ -157,17 +178,108 @@ test('square framing, high-resolution capture, clean export, cancelled share, an
   expect(errors).toEqual([]);
 });
 
-test('repeated retakes reopen the camera with only one active track', async ({ page }) => {
+test('repeated retakes reuse the prepared camera with only one active track', async ({ page }) => {
   await mockCamera(page);
   await openCamera(page);
   for (let shot = 0; shot < 5; shot += 1) {
     await page.getByRole('button', { name: 'Take photo' }).click();
     await expect(page.locator('#photo')).toBeVisible();
-    expect(await page.evaluate(() => cameraHarness.tracks.every(track => track.readyState === 'ended'))).toBe(true);
+    expect(await page.evaluate(() => cameraHarness.tracks.filter(track => track.readyState === 'live').length)).toBe(1);
     await page.getByRole('button', { name: 'Retake', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
     expect(await page.evaluate(() => cameraHarness.tracks.filter(track => track.readyState === 'live').length)).toBe(1);
   }
+  expect(await page.evaluate(() => cameraHarness.requests.length)).toBe(1);
+  expect(await page.evaluate(() => cameraHarness.capabilityQueries)).toEqual(['back']);
+});
+
+test('live-frame capture freezes the shutter pixels before slow encoding at prepared maximum resolution', async ({ page }) => {
+  await mockCamera(page, { noImageCapture: true, upgradeResolution: true, constraintDelay: 200, encodingDelay: 400 });
+  await openCamera(page);
+  expect(await page.evaluate(() => cameraHarness.settings[0].width)).toBe(1280);
+  const before = await page.evaluate(() => cameraHarness.constraintRequests.length);
+  const snapshot = await page.evaluate(() => {
+    document.getElementById('shutter').click();
+    const canvas = document.getElementById('frozen-frame');
+    const pixel = [...canvas.getContext('2d').getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data];
+    cameraHarness.centerColor = '#2430f0';
+    cameraHarness.repaint();
+    return { visible: !canvas.hidden, pixel };
+  });
+  expect(snapshot.visible).toBe(true);
+  expect(snapshot.pixel[0]).toBeGreaterThan(230);
+  await expect(page.locator('#photo-size')).toHaveText('960 × 960 px');
+  const pixel = await page.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(document.getElementById('photo'), 479, 479, 1, 1, 0, 0, 1, 1);
+    return [...ctx.getImageData(0, 0, 1, 1).data];
+  });
+  expect(pixel[0]).toBeGreaterThan(230);
+  expect(pixel[1]).toBeGreaterThan(195);
+  expect(await page.evaluate(() => cameraHarness.constraintRequests.length)).toBe(before);
+  await expect(page.locator('#photo-quality')).toContainText('Live frame');
+});
+
+test('a slow failed native capture falls back to the original frame without a second exposure', async ({ page }) => {
+  await mockCamera(page, { failPhoto: true, photoDelay: 400, capabilityDelay: 200 });
+  await openCamera(page);
+  expect(await page.evaluate(() => cameraHarness.capabilityQueries)).toEqual(['back']);
+  const snapshot = await page.evaluate(() => {
+    document.getElementById('shutter').click();
+    const requested = cameraHarness.photoRequests.length;
+    cameraHarness.centerColor = '#2430f0';
+    cameraHarness.repaint();
+    return { requested, frozen: !document.getElementById('frozen-frame').hidden };
+  });
+  expect(snapshot).toEqual({ requested: 1, frozen: true });
+  await expect(page.locator('#photo-size')).toHaveText('480 × 480 px');
+  const pixel = await page.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(document.getElementById('photo'), 239, 239, 1, 1, 0, 0, 1, 1);
+    return [...ctx.getImageData(0, 0, 1, 1).data];
+  });
+  expect(pixel[0]).toBeGreaterThan(230);
+  expect(pixel[1]).toBeGreaterThan(195);
+  expect(await page.evaluate(() => cameraHarness.photoRequests.length)).toBe(1);
+  expect(await page.evaluate(() => cameraHarness.capabilityQueries)).toEqual(['back']);
+});
+
+test('returning to a lens reuses its resolution and still settings without enumerating again', async ({ page }) => {
+  await mockCamera(page, { capabilityDelay: 200, permissionDelay: 150 });
+  await openCamera(page);
+  await page.locator('#lens-select').selectOption('wide');
+  await expect(page.locator('#capture-label')).toHaveText('Switching camera…');
+  await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
+  await page.locator('#lens-select').selectOption('back');
+  await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
+  const stats = await page.evaluate(() => ({
+    queries: cameraHarness.capabilityQueries,
+    enumerations: cameraHarness.enumerations,
+    resolution: cameraHarness.requests.at(-1).video.width.ideal,
+    active: cameraHarness.tracks.filter(track => track.readyState === 'live').length,
+  }));
+  expect(stats).toEqual({ queries: ['back', 'wide'], enumerations: 1, resolution: 640, active: 1 });
+});
+
+test('backgrounding photo review stops the retained camera and preserves the photo', async ({ page }) => {
+  await mockCamera(page);
+  await openCamera(page);
+  await page.getByRole('button', { name: 'Take photo' }).click();
+  await expect(page.locator('#photo')).toBeVisible();
+  const photo = await page.locator('#photo').getAttribute('src');
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(await page.evaluate(() => cameraHarness.tracks.every(track => track.readyState === 'ended'))).toBe(true);
+  await expect(page.locator('#photo')).toHaveAttribute('src', photo);
+  await expect(page.getByRole('button', { name: 'Save photo' })).toBeEnabled();
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); });
+  await page.getByRole('button', { name: 'Retake', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
+  expect(await page.evaluate(() => cameraHarness.requests.length)).toBe(2);
 });
 
 test('digital zoom is applied to the exported pixels and download fallback works', async ({ page }) => {
@@ -223,7 +335,7 @@ test('failed still-photo capture uses a disclosed stream-frame fallback', async 
   await openCamera(page);
   await page.getByRole('button', { name: 'Take photo' }).click();
   await expect(page.locator('#photo-size')).toHaveText('480 × 480 px');
-  await expect(page.locator('#status')).toContainText('live camera frame');
+  await expect(page.locator('#photo-quality')).toContainText('Live frame');
 });
 
 test('camera zoom uses reported settings without applying a second digital crop', async ({ page }) => {

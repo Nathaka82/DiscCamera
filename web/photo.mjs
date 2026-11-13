@@ -22,17 +22,27 @@ export async function decodePhoto(blob) {
   }
 }
 
-export async function squareJPEG(source, width, height, zoom = 1) {
+export function squareFrame(source, width, height, zoom = 1, maxSize = Infinity) {
   const crop = squareCrop(width, height, zoom);
   const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = crop.outputSize;
+  canvas.width = canvas.height = Math.min(crop.outputSize, maxSize);
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) throw new Error('There is not enough memory to prepare this photo. Please try again.');
+  context.drawImage(source, crop.x, crop.y, crop.side, crop.side, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+export async function encodeJPEG(canvas) {
+  const size = canvas.width;
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 1));
+  if (!blob) throw new Error('The photo could not be exported. Please try again.');
+  return { blob, size };
+}
+
+export async function squareJPEG(source, width, height, zoom = 1) {
+  const canvas = squareFrame(source, width, height, zoom);
   try {
-    const context = canvas.getContext('2d', { alpha: false });
-    if (!context) throw new Error('There is not enough memory to prepare this photo. Please try again.');
-    context.drawImage(source, crop.x, crop.y, crop.side, crop.side, 0, 0, crop.outputSize, crop.outputSize);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 1));
-    if (!blob) throw new Error('The photo could not be exported. Please try again.');
-    return { blob, size: crop.outputSize };
+    return await encodeJPEG(canvas);
   } finally {
     canvas.width = canvas.height = 1;
   }

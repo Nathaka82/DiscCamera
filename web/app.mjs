@@ -10,6 +10,7 @@ let currentPhoto = null;
 let showGuide = false;
 let sharing = false;
 let zoomOpen = false;
+let frozenVisible = false;
 
 function status(message = '') { $('status').textContent = message; }
 
@@ -18,20 +19,23 @@ function render() {
   const live = state === 'live';
   const review = state === 'review';
   const capturing = state === 'capturing';
+  const switching = state === 'switching';
   const gate = ['idle', 'starting', 'error', 'paused'].includes(state);
   if (!live) zoomOpen = false;
-  $('camera-gate').hidden = !gate;
+  $('camera-gate').hidden = !gate || (state === 'starting' && frozenVisible);
   $('camera').hidden = review;
   $('photo').hidden = !review;
   $('ambient-camera').hidden = review;
   $('ambient-photo').hidden = !review;
   $('live-controls').hidden = review;
   $('review-controls').hidden = !review;
-  $('capture-progress').hidden = !capturing;
+  $('frozen-frame').hidden = !frozenVisible;
+  $('capture-progress').hidden = !(capturing || switching || (state === 'starting' && frozenVisible));
+  $('viewfinder').setAttribute('aria-busy', String(capturing || switching || state === 'starting'));
   $('guide-toggle').hidden = !review;
   $('guide-toggle').setAttribute('aria-pressed', String(showGuide));
   $('guide-toggle').setAttribute('aria-label', showGuide ? 'Hide donut guide' : 'Show donut guide');
-  $('guide').toggleAttribute('hidden', review && !showGuide);
+  $('guide').toggleAttribute('hidden', capturing || switching || (review && !showGuide));
   $('shutter').disabled = !live;
   $('flip-button').disabled = !live;
   $('lens-select').disabled = !live || camera.devices.length < 2;
@@ -86,9 +90,26 @@ function releasePhoto() {
   $('save-fallback').hidden = true;
 }
 
+function freezePreview(source, mirror = false) {
+  const canvas = $('frozen-frame');
+  canvas.width = canvas.height = Math.min(source.naturalWidth || source.width, 1024);
+  canvas.style.transform = mirror ? 'scaleX(-1)' : '';
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  frozenVisible = true;
+}
+
 async function startCamera(selection = camera.selection) {
   const token = ++operation;
-  state = 'starting';
+  const switching = state === 'live';
+  if (switching) {
+    try {
+      const frame = camera.frame(1024);
+      freezePreview(frame, camera.facing === 'user');
+      frame.width = frame.height = 1;
+    } catch { frozenVisible = false; }
+  }
+  state = switching ? 'switching' : 'starting';
+  $('capture-label').textContent = switching ? 'Switching camera…' : 'Opening camera…';
   $('ambient-camera').srcObject = null;
   $('gate-copy').textContent = '';
   status();
@@ -113,6 +134,7 @@ async function startCamera(selection = camera.selection) {
     state = 'error';
     $('gate-copy').textContent = cameraMessage(error);
   }
+  frozenVisible = false;
   render();
 }
 
@@ -123,7 +145,14 @@ async function capture() {
   status();
   render();
   try {
-    const result = await camera.capture();
+    const result = await camera.capture((frame, nativeStill) => {
+      freezePreview(frame);
+      $('capture-label').textContent = nativeStill ? 'Taking photo…' : 'Processing photo…';
+      render();
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        $('frozen-frame').animate([{ opacity: .65 }, { opacity: 1 }], { duration: 140 });
+      }
+    }, () => { $('capture-label').textContent = 'Processing photo…'; });
     if (token !== operation) return;
     const file = photoFile(result.blob);
     releasePhoto();
@@ -132,22 +161,21 @@ async function capture() {
     $('ambient-photo').src = currentPhoto.url;
     await $('photo').decode();
     if (token !== operation) { releasePhoto(); return; }
-    camera.stop();
     $('ambient-camera').srcObject = null;
     $('photo-size').textContent = `${result.size.toLocaleString()} × ${result.size.toLocaleString()} px`;
-    $('photo-quality').textContent = 'JPEG';
+    $('photo-quality').textContent = result.fallback ? 'JPEG · Live frame' : 'JPEG';
     $('open-image').href = $('download-image').href = currentPhoto.url;
     $('download-image').download = file.name;
     showGuide = false;
+    frozenVisible = false;
     state = 'review';
-    status(result.fallback
-      ? 'Captured from the live camera frame. Full-resolution still capture wasn’t available for this shot.'
-      : '');
+    status();
     render();
     $('save-button').focus({ preventScroll: true });
   } catch (error) {
     if (token !== operation) return;
     releasePhoto();
+    frozenVisible = false;
     state = camera.track?.readyState === 'live' ? 'live' : 'error';
     if (state === 'error') {
       $('gate-copy').textContent = cameraMessage(error);
@@ -182,11 +210,17 @@ async function savePhoto() {
 }
 
 function pauseCamera() {
-  if (!['live', 'starting', 'capturing'].includes(state)) return;
+  if (state === 'review') {
+    camera.stop();
+    $('ambient-camera').srcObject = null;
+    return;
+  }
+  if (!['live', 'starting', 'switching', 'capturing'].includes(state)) return;
   operation += 1;
   camera.stop();
   $('ambient-camera').srcObject = null;
   state = 'paused';
+  frozenVisible = false;
   $('gate-copy').textContent = '';
   status();
   render();
@@ -196,7 +230,11 @@ $('start-button').addEventListener('click', () => startCamera());
 $('shutter').addEventListener('click', capture);
 $('save-button').addEventListener('click', savePhoto);
 for (const id of ['retake-button', 'new-button']) {
-  $(id).addEventListener('click', () => { releasePhoto(); startCamera(); });
+  $(id).addEventListener('click', () => {
+    if ($('photo').naturalWidth) freezePreview($('photo'));
+    releasePhoto();
+    startCamera();
+  });
 }
 $('flip-button').addEventListener('click', () => startCamera({ facing: camera.facing === 'user' ? 'environment' : 'user' }));
 $('lens-select').addEventListener('change', (event) => startCamera({ deviceId: event.target.value }));
@@ -220,6 +258,9 @@ $('guide-toggle').addEventListener('click', () => { showGuide = !showGuide; rend
 camera.addEventListener('change', renderCamera);
 camera.addEventListener('interrupted', pauseCamera);
 navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
+  camera.profiles.clear();
+  camera.selectionProfiles.clear();
+  camera.devices = [];
   if (state !== 'live') return;
   await camera.refreshDevices();
   renderLenses();

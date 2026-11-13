@@ -42,7 +42,9 @@ option { background: #161616; }
 .camera-area::before { content: ''; position: absolute; inset: 0; background: linear-gradient(#080808 0%, transparent 22%, transparent 78%, #080808 100%); z-index: -1; pointer-events: none; }
 .viewfinder { position: relative; width: min(100cqw, 100cqh); aspect-ratio: 1; overflow: hidden; isolation: isolate; background: #121212; touch-action: none; }
 .viewfinder::after { content: ''; position: absolute; inset: 8px; pointer-events: none; z-index: 3; opacity: .65; background: linear-gradient(#fff,#fff) left top / 16px 1px, linear-gradient(#fff,#fff) left top / 1px 16px, linear-gradient(#fff,#fff) right top / 16px 1px, linear-gradient(#fff,#fff) right top / 1px 16px, linear-gradient(#fff,#fff) left bottom / 16px 1px, linear-gradient(#fff,#fff) left bottom / 1px 16px, linear-gradient(#fff,#fff) right bottom / 16px 1px, linear-gradient(#fff,#fff) right bottom / 1px 16px; background-repeat: no-repeat; }
-#camera, #photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#camera, #photo, #frozen-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#frozen-frame { pointer-events: none; }
+.app[data-state="switching"] #frozen-frame { filter: blur(10px) brightness(.65); transform: scale(1.04); }
 #camera { transform: scale(var(--digital-zoom, 1)) scaleX(var(--mirror, 1)); }
 .guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; stroke: none; }
 .guide-shade { fill: #000; fill-opacity: .45; }
@@ -50,15 +52,16 @@ option { background: #161616; }
 .hole-line { stroke-opacity: .65; stroke-dasharray: 2 5; }
 .app[data-state="idle"] .guide-line, .app[data-state="paused"] .guide-line { stroke-opacity: .17; }
 .app[data-state="idle"] .viewfinder::after { opacity: .35; }
-.app[data-state="review"] .viewfinder::after { display: none; }
+.app[data-state="review"] .viewfinder::after, .app[data-state="capturing"] .viewfinder::after { display: none; }
 .camera-gate { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; }
 .camera-gate p { max-width: 300px; padding: 12px 16px; margin: 0; color: #ccc; background: #111e; border-radius: 8px; font-size: 13px; line-height: 1.6; }
 .primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 12px 20px; background: #f4f4f4; color: #111; border-radius: 999px; font-size: 14px; font-weight: 600; transition: transform .12s, background .12s; }
 .primary-button:active:not(:disabled) { transform: scale(.97); background: #d5d5d5; }
 .primary-button svg { width: 19px; height: 19px; }
 #start-button { background: #f4f4f4; min-height: 50px; padding-inline: 22px; }
-.capture-progress { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #080808c9; backdrop-filter: blur(8px); font-size: 13px; }
-.spinner { width: 26px; height: 26px; border: 2px solid #fff3; border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+.capture-progress { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; padding: 11px 15px; border: 1px solid #ffffff20; border-radius: 999px; background: #111d; color: #eee; font-size: 12px; white-space: nowrap; pointer-events: none; }
+.spinner { width: 14px; height: 14px; border: 1.5px solid #fff3; border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+.app[data-state="capturing"] .shutter > span { transform: scale(.74); transition: transform .12s; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* A single compact capture bar; no detached settings panel. */

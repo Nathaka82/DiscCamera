@@ -7,6 +7,8 @@ A small, private camera PWA for taking square photos to print on donuts. Built f
 - Pinch/slider zoom: camera zoom when supported, digital crop otherwise.
 - Full-screen responsive layout: compact bottom controls in portrait, a narrow control rail in landscape, and a square viewfinder sized to the available space. Tap the zoom value to open the slider; Reset returns to 1× (or the camera's nearest supported value).
 - Maximum browser-exposed still-photo dimensions, square JPEG export, and no upscaling.
+- Shutter-time frame capture with a frozen preview during encoding; camera setup happens before the shutter is enabled.
+- Prepared lens settings are reused, and Retake keeps the same camera session while the app stays in the foreground.
 - Clean exports without the guide, plus review, retake, and iPhone file sharing.
 - Home Screen installation and an offline app shell.
 
@@ -49,13 +51,15 @@ No GitHub repository or remote was supplied in this workspace, so this implement
 4. Tap the shutter. In review, the **Guide** button lets you check the composition without modifying the photo.
 5. Tap **Save photo**, then choose **Save Image** in the iPhone share sheet. If file sharing is unavailable, use **Open image** and touch and hold it to save, or download a JPEG to Files.
 
-Cancelling the share sheet keeps the photo ready to save again. The browser cannot confirm which share destination you chose. **Retake** and **New photo** discard the in-memory image and reopen the camera. Save before reloading, closing the app, or taking another picture. The app does not maintain a gallery.
+Cancelling the share sheet keeps the photo ready to save again. The browser cannot confirm which share destination you chose. **Retake** and **New photo** discard the in-memory image and return to the prepared camera without requesting a new stream. The camera stays active during foreground review and stops when the app is backgrounded; the captured photo remains available. Save before reloading, closing the app, or taking another picture. The app does not maintain a gallery.
 
 After successful first loading and caching, the app opens offline. It stops camera tracks when backgrounded, with an explicit **Resume camera** action on return. Updates wait until all windows of the app are closed, so they do not reload a photo you are reviewing. iOS can reclaim website storage; reopen online if the offline cache has been removed.
 
 ## Resolution and device limitations
 
-The app calls `ImageCapture.getPhotoCapabilities()` and requests the largest reported width and height via `takePhoto()`. If explicit dimensions are rejected, it retries the camera's default still capture. If still capture is unavailable, it uses the largest negotiated live-camera frame and labels that fallback in review.
+When a lens opens, the app negotiates the largest available live-frame dimensions and queries `ImageCapture.getPhotoCapabilities()` if supported. Resolution and still-photo settings are cached per lens for that page session. No capability queries, resolution changes, or settling delays run after a shutter tap.
+
+The shutter synchronously copies the current square frame before any asynchronous work. Where native still capture is available, it immediately requests the largest reported still dimensions. If that fails, the app exports the original shutter-time frame instead of taking a second, later exposure. Where native still capture is unavailable, it encodes that frozen frame directly. Review labels frame exports **JPEG · Live frame** and always shows their actual pixel dimensions. JPEG processing cannot change the frozen pixels. Native still exposure timing remains controlled by the browser and camera; the frozen preview is not a zero-lag guarantee for the native still API.
 
 The output is an orientation-normalized, centred square, encoded as JPEG at quality `1`. Its edge length is the source's shorter edge divided by digital zoom, rounded down. For example, a 4032 × 3024 source produces 3024 × 3024 pixels at 1× digital zoom, or 1512 × 1512 pixels at 2×. Camera zoom is applied by the camera and is not cropped a second time. Review shows the actual exported dimensions.
 
@@ -69,7 +73,7 @@ npx playwright install chromium webkit
 npm run test:browser
 ```
 
-Unit tests cover geometry, zoom limits, filenames, manifest paths, and PNG dimensions. Browser tests run in Chromium and WebKit with simulated cameras and share sheets, covering capture/export, clean centre pixels, EXIF orientation, pinch gestures, camera switching, permission recovery, native/digital zoom, still-capture fallback, background interruption, late permission responses, offline subpath loading, and layout.
+Unit tests cover geometry, zoom limits, filenames, manifest paths, and PNG dimensions. Browser tests run in Chromium and WebKit with simulated cameras and share sheets, covering capture/export, shutter-time pixels despite scene movement and delayed encoding, maximum live-frame preparation, lens-setting reuse, repeated retakes, review/background cleanup, clean centre pixels, EXIF orientation, pinch gestures, camera switching, permission recovery, native/digital zoom, still-capture fallback, late permission responses, offline subpath loading, and layout.
 
 The browser test server uses port 4174 on localhost so it can run alongside the development server on port 4173.
 

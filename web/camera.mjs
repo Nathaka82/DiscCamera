@@ -1,5 +1,5 @@
 import { clampZoom } from './geometry.mjs';
-import { decodePhoto, squareJPEG, withTimeout } from './photo.mjs';
+import { decodePhoto, squareFrame, squareJPEG, encodeJPEG, withTimeout } from './photo.mjs';
 
 export function cameraMessage(error) {
   switch (error?.name) {
@@ -25,6 +25,11 @@ export class Camera extends EventTarget {
     this.zoom = { mode: 'digital', min: 1, max: 4, step: 0.01, value: 1 };
     this.zoomJob = null;
     this.wantedZoom = null;
+    this.profiles = new Map();
+    this.selectionProfiles = new Map();
+    this.prepared = false;
+    this.photoCapture = null;
+    this.photoSettings = {};
   }
 
   changed() { this.dispatchEvent(new Event('change')); }
@@ -33,20 +38,31 @@ export class Camera extends EventTarget {
     this.generation += 1;
     this.wantedZoom = null;
     this.zoomJob = null;
+    this.prepared = false;
+    this.photoCapture = null;
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = this.track = null;
     this.video.srcObject = null;
   }
 
   async start(selection = this.selection) {
+    const current = this.track?.getSettings();
+    const sameCamera = selection.deviceId ? selection.deviceId === current?.deviceId : selection.facing === this.facing;
+    if (this.prepared && this.track?.readyState === 'live' && sameCamera && !document.hidden) {
+      await withTimeout(this.video.play(), 12000);
+      await this.readyFrame();
+      return true;
+    }
     this.stop();
     const generation = this.generation;
     if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
       throw new Error('Camera access needs HTTPS. Open the published app in Safari.');
     }
     this.selection = { ...selection };
+    const selectionKey = selection.deviceId || `facing:${selection.facing || 'environment'}`;
+    const knownProfile = this.profiles.get(this.selectionProfiles.get(selectionKey) || selectionKey);
     const video = {
-      width: { ideal: 4096 }, height: { ideal: 3072 },
+      width: { ideal: knownProfile?.width || 4096 }, height: { ideal: knownProfile?.height || 3072 },
       aspectRatio: { ideal: 4 / 3 }, frameRate: { ideal: 24, max: 30 },
       ...(selection.deviceId ? { deviceId: { exact: selection.deviceId } } : { facingMode: { ideal: selection.facing || 'environment' } }),
     };
@@ -67,8 +83,18 @@ export class Camera extends EventTarget {
     this.stream = stream;
     this.track = stream.getVideoTracks()[0];
     const track = this.track;
-    this.video.srcObject = stream;
     try {
+      const deviceKey = track.getSettings().deviceId || selectionKey;
+      const profile = this.profiles.get(deviceKey);
+      const devicesReady = this.devices.length ? Promise.resolve() : this.refreshDevices();
+      const prepared = await this.prepareCapture(track, profile);
+      if (generation !== this.generation) return false;
+      this.profile = prepared.profile;
+      this.photoCapture = prepared.capture;
+      this.photoSettings = prepared.profile.photoSettings;
+      this.profiles.set(deviceKey, prepared.profile);
+      this.selectionProfiles.set(selectionKey, deviceKey);
+      this.video.srcObject = stream;
       await withTimeout(this.video.play(), 12000);
       await this.readyFrame();
       if (generation !== this.generation) return false;
@@ -78,7 +104,7 @@ export class Camera extends EventTarget {
       this.zoom = capability && Number.isFinite(capability.min) && capability.max > capability.min
         ? { mode: 'camera', min: capability.min, max: capability.max, step: capability.step || 0.01, value: settings.zoom ?? capability.min }
         : { mode: 'digital', min: 1, max: 4, step: 0.01, value: 1 };
-      await this.refreshDevices();
+      await devicesReady;
       if (generation !== this.generation) return false;
       track.addEventListener('ended', () => {
         if (track === this.track) {
@@ -86,6 +112,7 @@ export class Camera extends EventTarget {
           this.dispatchEvent(new Event('interrupted'));
         }
       });
+      this.prepared = true;
       this.changed();
       return true;
     } catch (error) {
@@ -93,6 +120,44 @@ export class Camera extends EventTarget {
       this.stop();
       throw error;
     }
+  }
+
+  async prepareCapture(track, cached) {
+    let capture = null;
+    if (!cached?.stillUnavailable && typeof window.ImageCapture === 'function') {
+      try { capture = new ImageCapture(track); } catch { /* Use the prepared live frame. */ }
+    }
+    // Query still dimensions while configuring the stream, never on the shutter path.
+    const photoSettings = cached ? Promise.resolve(cached.photoSettings) : (async () => {
+      if (!capture) return {};
+      try {
+        const caps = await withTimeout(capture.getPhotoCapabilities(), 4000);
+        return {
+          ...(caps.imageWidth?.max > 0 ? { imageWidth: caps.imageWidth.max } : {}),
+          ...(caps.imageHeight?.max > 0 ? { imageHeight: caps.imageHeight.max } : {}),
+        };
+      } catch { return {}; }
+    })();
+    if (!cached) {
+      const caps = track.getCapabilities?.() || {};
+      const settings = track.getSettings();
+      if (caps.width?.max > settings.width || caps.height?.max > settings.height) {
+        try {
+          await withTimeout(track.applyConstraints({
+            ...track.getConstraints(),
+            ...(caps.width?.max ? { width: { ideal: caps.width.max } } : {}),
+            ...(caps.height?.max ? { height: { ideal: caps.height.max } } : {}),
+          }), 5000);
+        } catch { /* Keep the highest dimensions successfully negotiated by the camera. */ }
+      }
+    }
+    const settings = track.getSettings();
+    return { capture, profile: { ...cached, width: settings.width, height: settings.height, photoSettings: await photoSettings } };
+  }
+
+  frame(maxSize = Infinity) {
+    return squareFrame(this.video, this.video.videoWidth, this.video.videoHeight,
+      this.zoom.mode === 'digital' ? this.zoom.value : 1, maxSize);
   }
 
   async readyFrame() {
@@ -145,8 +210,7 @@ export class Camera extends EventTarget {
     return this.zoomJob;
   }
 
-  async capture() {
-    await this.zoomJob;
+  async capture(onFrame = () => {}, onProcessing = () => {}) {
     const track = this.track;
     const generation = this.generation;
     const checkActive = () => {
@@ -155,57 +219,40 @@ export class Camera extends EventTarget {
       }
     };
     checkActive();
+    // Copy the pixels synchronously, before any promise, encoding, or hardware call.
+    // A failed/unsupported still capture always uses this exact shutter-time frame.
+    const frozen = this.frame();
     const digitalZoom = this.zoom.mode === 'digital' ? this.zoom.value : 1;
+    const still = this.zoomJob ? null : this.photoCapture;
     let photo = null;
-    let fallback = false;
-    if (typeof window.ImageCapture === 'function') {
-      try {
-        const capture = new ImageCapture(track);
-        let settings = {};
+    try {
+      onFrame(frozen, !!still);
+      if (still) {
         try {
-          const caps = await withTimeout(capture.getPhotoCapabilities(), 4000);
-          if (caps.imageWidth?.max > 0) settings.imageWidth = caps.imageWidth.max;
-          if (caps.imageHeight?.max > 0) settings.imageHeight = caps.imageHeight.max;
-        } catch { /* Some cameras implement takePhoto without capability queries. */ }
-        checkActive();
-        let blob;
-        try {
-          blob = await withTimeout(capture.takePhoto(settings), 12000);
+          const blob = await withTimeout(still.takePhoto(this.photoSettings), 12000);
+          checkActive();
+          photo = await decodePhoto(blob);
         } catch (error) {
           checkActive();
-          if (!Object.keys(settings).length) throw error;
-          blob = await withTimeout(capture.takePhoto(), 12000);
+          // Do not take a second, later exposure. Keep the original frame instead.
+          if (error.name === 'OverconstrainedError' && Object.keys(this.photoSettings).length) {
+            this.photoSettings = this.profile.photoSettings = {};
+          } else {
+            this.photoCapture = null;
+            this.profile.stillUnavailable = true;
+          }
         }
-        checkActive();
-        photo = await decodePhoto(blob);
-      } catch {
-        checkActive();
-        fallback = true;
-      }
-    } else { fallback = true; }
-
-    try {
-      if (!photo) {
-        // Upgrade fallback frames to the largest stream dimensions the camera exposes.
-        const caps = track.getCapabilities?.() || {};
-        if (caps.width?.max && caps.height?.max) {
-          try {
-            await withTimeout(track.applyConstraints({
-              ...track.getConstraints(),
-              width: { ideal: caps.width.max }, height: { ideal: caps.height.max },
-              aspectRatio: { ideal: 4 / 3 },
-            }), 5000);
-            await new Promise((resolve) => setTimeout(resolve, 150));
-          } catch { /* Retain the negotiated stream if the upgrade is rejected. */ }
-        }
-        checkActive();
-        await this.readyFrame();
-        photo = { source: this.video, width: this.video.videoWidth, height: this.video.videoHeight, release() {} };
       }
       checkActive();
-      const result = await squareJPEG(photo.source, photo.width, photo.height, digitalZoom);
+      onProcessing();
+      const result = photo
+        ? await squareJPEG(photo.source, photo.width, photo.height, digitalZoom)
+        : await encodeJPEG(frozen);
       checkActive();
-      return { ...result, fallback, digitalZoom };
-    } finally { photo?.release(); }
+      return { ...result, fallback: !photo, digitalZoom };
+    } finally {
+      photo?.release();
+      frozen.width = frozen.height = 1;
+    }
   }
 }

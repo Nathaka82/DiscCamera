@@ -39,6 +39,7 @@
       <div class="viewfinder" id="viewfinder">
         <video id="camera" autoplay muted playsinline disablepictureinpicture aria-label="Live camera preview"></video>
         <img id="photo" alt="Your captured square photo" hidden>
+        <canvas id="frozen-frame" aria-hidden="true" hidden></canvas>
         <svg id="guide" class="guide" viewBox="0 0 1000 1000" aria-hidden="true">
           <defs><mask id="ring-mask"><rect width="1000" height="1000" fill="white"/><circle cx="500" cy="500" r="500" fill="black"/><circle cx="500" cy="500" r="205" fill="white"/></mask></defs>
           <rect width="1000" height="1000" class="guide-shade" mask="url(#ring-mask)"/>
@@ -50,7 +51,7 @@
           <p id="gate-copy" hidden></p>
           <button class="primary-button" id="start-button"><svg aria-hidden="true"><use href="#i-camera"/></svg><span id="start-label">Open camera</span></button>
         </div>
-        <div class="capture-progress" id="capture-progress" hidden><span class="spinner"></span><span>Preparing your photo…</span></div>
+        <div class="capture-progress" id="capture-progress" role="status" hidden><span class="spinner"></span><span id="capture-label">Processing photo…</span></div>
       </div>
     </section>
 
@@ -84,7 +85,8 @@
     <p>Keep important details in the clear ring. The centre hole is <strong>41% of the outer radius</strong>. The guide never appears in your saved photo.</p>
     <h3>Save to Photos</h3><p>Take a photo, tap <strong>Save photo</strong>, then choose <strong>Save Image</strong> in the iPhone share sheet. You can keep or retake the photo after closing the sheet.</p>
     <h3>Install</h3><p>In Safari, open the Share menu and choose <strong>Add to Home Screen</strong>. Turn on <strong>Open as Web App</strong> if offered, then tap Add.</p>
-    <h3>Photo quality</h3><p>The app requests the largest still photo your browser offers, then crops it to a square. Digital zoom crops further. Available lenses and resolution depend on your phone and browser.</p>
+    <h3>Photo quality</h3><p>The camera is prepared at its highest available resolution before shooting. When still capture is unavailable, the frame is frozen at your shutter tap and marked <strong>Live frame</strong>. Digital zoom crops further. Available lenses and resolution depend on your phone and browser.</p>
+    <p class="help-small">The camera stays ready during photo review for quick retakes. It turns off when you leave the app.</p>
     <p class="help-small">Photos are processed on your device. Only the current photo is held in memory; save it before closing or reloading the app.</p>
     <p class="help-small" id="offline-status">Preparing offline access…</p>
   </dialog>
