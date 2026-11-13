@@ -51,7 +51,7 @@ No GitHub repository or remote was supplied in this workspace, so this implement
 4. Tap the shutter. In review, the **Guide** button lets you check the composition without modifying the photo.
 5. Tap **Save photo**, then choose **Save Image** in the iPhone share sheet. If file sharing is unavailable, use **Open image** and touch and hold it to save, or download a JPEG to Files.
 
-Cancelling the share sheet keeps the photo ready to save again. The browser cannot confirm which share destination you chose. **Retake** and **New photo** discard the in-memory image and return to the prepared camera without requesting a new stream. The camera stays active during foreground review and stops when the app is backgrounded; the captured photo remains available. Save before reloading, closing the app, or taking another picture. The app does not maintain a gallery.
+Cancelling the share sheet keeps the photo ready to save again. The browser cannot confirm which share destination you chose. **Retake** discards the in-memory image and returns to the prepared camera without requesting a new stream. The camera stays active during foreground review and stops when the app is backgrounded; the captured photo remains available. Save before reloading, closing the app, or taking another picture. The app does not maintain a gallery.
 
 After successful first loading and caching, the app opens offline. It stops camera tracks when backgrounded, with an explicit **Resume camera** action on return. Updates wait until all windows of the app are closed, so they do not reload a photo you are reviewing. iOS can reclaim website storage; reopen online if the offline cache has been removed.
 

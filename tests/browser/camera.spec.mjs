@@ -313,7 +313,7 @@ test('switching lenses and selfie camera stops old streams and preserves image o
   await page.getByRole('button', { name: 'Take photo' }).click();
   await expect(page.locator('#photo')).toBeVisible();
   await expect(page.locator('#photo')).toHaveCSS('transform', 'none');
-  await page.getByRole('button', { name: 'New photo' }).click();
+  await page.getByRole('button', { name: 'Retake', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
   await page.locator('#lens-select').selectOption('wide');
   await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();

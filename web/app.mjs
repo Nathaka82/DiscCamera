@@ -49,7 +49,6 @@ function render() {
   $('start-label').textContent = state === 'starting' ? 'Opening camera…' : state === 'paused' ? 'Resume camera' : state === 'error' ? 'Try again' : 'Open camera';
   $('save-button').disabled = sharing;
   $('retake-button').disabled = sharing;
-  $('new-button').disabled = sharing;
   $('gate-copy').hidden = !$('gate-copy').textContent;
 }
 
@@ -229,13 +228,11 @@ function pauseCamera() {
 $('start-button').addEventListener('click', () => startCamera());
 $('shutter').addEventListener('click', capture);
 $('save-button').addEventListener('click', savePhoto);
-for (const id of ['retake-button', 'new-button']) {
-  $(id).addEventListener('click', () => {
-    if ($('photo').naturalWidth) freezePreview($('photo'));
-    releasePhoto();
-    startCamera();
-  });
-}
+$('retake-button').addEventListener('click', () => {
+  if ($('photo').naturalWidth) freezePreview($('photo'));
+  releasePhoto();
+  startCamera();
+});
 $('flip-button').addEventListener('click', () => startCamera({ facing: camera.facing === 'user' ? 'environment' : 'user' }));
 $('lens-select').addEventListener('change', (event) => startCamera({ deviceId: event.target.value }));
 $('zoom').addEventListener('input', (event) => camera.setZoom(event.target.value));
