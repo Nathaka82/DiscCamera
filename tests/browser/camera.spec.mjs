@@ -1,5 +1,21 @@
 ﻿import { test, expect } from '@playwright/test';
 
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus || page.isClosed()) return;
+  const state = await page.evaluate(() => {
+    const video = document.getElementById('camera');
+    return {
+      state: document.querySelector('.app')?.dataset.state,
+      message: document.getElementById('gate-copy')?.textContent,
+      hidden: document.hidden,
+      video: video && { readyState: video.readyState, paused: video.paused, width: video.videoWidth, height: video.videoHeight, error: video.error?.message },
+      requests: window.cameraHarness?.requests,
+      tracks: window.cameraHarness?.tracks.map(track => ({ state: track.readyState, muted: track.muted, enabled: track.enabled })),
+    };
+  }).catch(error => ({ diagnosticError: error.message }));
+  await testInfo.attach('camera-state', { body: JSON.stringify(state, null, 2), contentType: 'application/json' });
+});
+
 async function mockCamera(page, options = {}) {
   await page.addInitScript((options) => {
     const harness = window.cameraHarness = {
@@ -139,6 +155,19 @@ test('square framing, high-resolution capture, clean export, cancelled share, an
   await page.getByRole('button', { name: 'Retake', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
   expect(errors).toEqual([]);
+});
+
+test('repeated retakes reopen the camera with only one active track', async ({ page }) => {
+  await mockCamera(page);
+  await openCamera(page);
+  for (let shot = 0; shot < 5; shot += 1) {
+    await page.getByRole('button', { name: 'Take photo' }).click();
+    await expect(page.locator('#photo')).toBeVisible();
+    expect(await page.evaluate(() => cameraHarness.tracks.every(track => track.readyState === 'ended'))).toBe(true);
+    await page.getByRole('button', { name: 'Retake', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
+    expect(await page.evaluate(() => cameraHarness.tracks.filter(track => track.readyState === 'live').length)).toBe(1);
+  }
 });
 
 test('digital zoom is applied to the exported pixels and download fallback works', async ({ page }) => {

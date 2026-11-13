@@ -93,6 +93,8 @@ async function startCamera(selection = camera.selection) {
   $('gate-copy').textContent = '';
   status();
   render();
+  // Commit the preview's restored visibility before WebKit attaches a new stream.
+  $('camera').getBoundingClientRect();
   try {
     const started = await camera.start(selection);
     if (token !== operation || !started) return;
