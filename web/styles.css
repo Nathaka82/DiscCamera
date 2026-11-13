@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #080808;
@@ -32,8 +32,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .topbar { grid-column: 1; grid-row: 1; display: flex; align-items: center; justify-content: space-between; padding: 8px 20px; gap: 20px; z-index: 3; }
 .icon-button { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: #ffffff0c; transition: background .15s, transform .15s; }
 .icon-button:active:not(:disabled) { background: #ffffff20; transform: scale(.93); }
-.topbar .icon-button { width: 44px; height: 44px; background: transparent; color: #bcbcbc; margin-left: auto; }
-.lens-picker { display: flex; position: relative; align-items: center; min-width: 0; max-width: calc(100% - 64px); }
+.lens-picker { display: flex; position: relative; align-items: center; min-width: 0; max-width: 100%; }
 .lens-picker > svg { position: absolute; left: 0; pointer-events: none; width: 18px; height: 18px; color: #aaa; }
 select { appearance: none; -webkit-appearance: none; min-width: 0; max-width: 100%; min-height: 44px; border: 0; border-radius: 0; padding: 10px 24px 10px 28px; color: #e5e5e5; font-size: 13px; font-weight: 500; text-overflow: ellipsis; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23999999' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 2px center / 9px 6px; }
 option { background: #161616; }
@@ -105,14 +104,6 @@ input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius
 .control-panel:has(.save-fallback:not([hidden])) .status { display: none; }
 .control-panel:has(.status:not(:empty)) .photo-details { display: none; }
 
-dialog { background: #181818; color: #eee; border: 1px solid #ffffff20; border-radius: 22px; width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 48px); padding: 24px; box-shadow: 0 24px 100px #0008; }
-dialog::backdrop { background: #000a; backdrop-filter: blur(8px); }
-.dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-h2 { margin: 0; font-size: 20px; font-weight: 550; letter-spacing: -.4px; }
-h3 { font-size: 13px; font-weight: 600; margin: 24px 0 8px; }
-dialog p { color: #bbb; font-size: 13px; line-height: 1.7; }
-dialog strong { color: #eee; font-weight: 550; }
-.help-small { font-size: 11px; color: #999; }
 .noscript { position: fixed; inset: auto 20px 20px; padding: 20px; background: #222; }
 
 @media (orientation: portrait) and (max-height: 700px) {

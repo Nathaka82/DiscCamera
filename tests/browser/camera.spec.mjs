@@ -1,4 +1,4 @@
-﻿import { test, expect } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status === testInfo.expectedStatus || page.isClosed()) return;
@@ -389,7 +389,7 @@ test('a late permission response cannot restart a backgrounded camera', async ({
   await expect(page.getByRole('button', { name: 'Resume camera' })).toBeVisible();
 });
 
-test('the app installs its scoped shell and reopens offline', async ({ page, context }) => {
+test('the app reopens offline, captures a photo, and opens file sharing', async ({ page, context }) => {
   await mockCamera(page);
   await page.goto('/Donut_Camera/');
   await page.evaluate(async () => {
@@ -409,9 +409,13 @@ test('the app installs its scoped shell and reopens offline', async ({ page, con
   await expect(page.getByRole('button', { name: 'Open camera' })).toBeVisible();
   await page.getByRole('button', { name: 'Open camera' }).click();
   await expect(page.getByRole('button', { name: 'Take photo' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Take photo' }).click();
+  await expect(page.locator('#photo-size')).toHaveText('1,200 × 1,200 px');
+  await page.getByRole('button', { name: 'Save photo' }).click();
+  expect(await page.evaluate(() => cameraHarness.shareCalls[0][0].type)).toBe('image/jpeg');
 });
 
-test('phone and landscape layouts do not overflow, and help is keyboard dismissible', async ({ page }) => {
+test('phone and landscape layouts do not overflow', async ({ page }) => {
   await mockCamera(page);
   await page.goto('/Donut_Camera/');
   await page.screenshot({ path: test.info().outputPath('welcome.png') });
@@ -436,10 +440,6 @@ test('phone and landscape layouts do not overflow, and help is keyboard dismissi
       expect(viewport.height - shutter.y - shutter.height).toBeLessThan(50);
     }
   }
-  await page.getByRole('button', { name: 'Help and installation' }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).toBeHidden();
 });
 
 test('EXIF-rotated camera JPEGs are normalized before square cropping', async ({ page }) => {

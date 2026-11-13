@@ -293,19 +293,10 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { pauseCamera(); camera.stop(); });
 
-$('help-button').addEventListener('click', () => $('help-dialog').showModal());
-$('close-help').addEventListener('click', () => $('help-dialog').close());
-$('help-dialog').addEventListener('click', (event) => { if (event.target === $('help-dialog')) {
-  const box = $('help-dialog').getBoundingClientRect();
-  if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) $('help-dialog').close();
-} });
-
 render();
 try { if (localStorage.getItem('donut-camera-started') === 'yes') startCamera(); } catch { /* Storage is optional. */ }
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' }).then(async () => {
-    await navigator.serviceWorker.ready;
-    $('offline-status').textContent = 'Ready to open offline. Updates apply after you close all app windows.';
-  }).catch(() => { $('offline-status').textContent = 'Offline access is unavailable. The camera still works while this page is open.'; });
-} else { $('offline-status').textContent = 'Offline access is unavailable in this browser.'; }
+  navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' })
+    .catch(error => console.warn('Offline cache registration failed:', error));
+}

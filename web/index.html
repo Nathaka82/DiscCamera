@@ -18,19 +18,15 @@
 <body>
   <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <symbol id="i-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.69"/></symbol>
-    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></symbol>
     <symbol id="i-flip" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6.2 6.2A8.2 8.2 0 0 1 20 12M4 12a8.2 8.2 0 0 0 13.8 5.8"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M7 10H4v11h16V10h-3"/></symbol>
-    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4Z"/><circle cx="12" cy="13" r="3.5"/></symbol>
-    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></symbol>
   </svg>
 
   <main class="app" data-state="idle">
     <header class="topbar">
       <h1 class="sr-only">Donut Camera</h1>
       <label class="lens-picker" for="lens-select"><svg aria-hidden="true"><use href="#i-camera"/></svg><select id="lens-select" disabled aria-label="Camera lens"><option>Back camera</option></select></label>
-      <button class="icon-button" id="help-button" aria-label="Help and installation"><svg><use href="#i-info"/></svg></button>
     </header>
 
     <section class="camera-area" aria-label="Camera">
@@ -80,16 +76,6 @@
     </div>
   </main>
 
-  <dialog id="help-dialog" aria-labelledby="help-title">
-    <div class="dialog-heading"><h2 id="help-title">Help</h2><button class="icon-button" id="close-help" aria-label="Close help"><svg><use href="#i-close"/></svg></button></div>
-    <p>Keep important details in the clear ring. The centre hole is <strong>41% of the outer radius</strong>. The guide never appears in your saved photo.</p>
-    <h3>Save to Photos</h3><p>Take a photo, tap <strong>Save photo</strong>, then choose <strong>Save Image</strong> in the iPhone share sheet. You can keep or retake the photo after closing the sheet.</p>
-    <h3>Install</h3><p>In Safari, open the Share menu and choose <strong>Add to Home Screen</strong>. Turn on <strong>Open as Web App</strong> if offered, then tap Add.</p>
-    <h3>Photo quality</h3><p>The camera is prepared at its highest available resolution before shooting. When still capture is unavailable, the frame is frozen at your shutter tap and marked <strong>Live frame</strong>. Digital zoom crops further. Available lenses and resolution depend on your phone and browser.</p>
-    <p class="help-small">The camera stays ready during photo review for quick retakes. It turns off when you leave the app.</p>
-    <p class="help-small">Photos are processed on your device. Only the current photo is held in memory; save it before closing or reloading the app.</p>
-    <p class="help-small" id="offline-status">Preparing offline access…</p>
-  </dialog>
   <noscript><p class="noscript">Enable JavaScript to use Donut Camera.</p></noscript>
 </body>
 </html>
